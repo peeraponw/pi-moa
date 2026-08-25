@@ -13,18 +13,22 @@ Mixture-of-agents workflow for pi, adapted from Hermes MoA for coding-agent use.
 - Advisor outputs are visible as a collapsible thinking block and filtered from future context.
 - Global config plus optional project override.
 
-## Install locally
-
-From this directory:
+## Install
 
 ```bash
-pi install .
+pi install npm:@peeraponw/pi-moa
 ```
 
 Or try without installing:
 
 ```bash
-pi -e .
+pi -e npm:@peeraponw/pi-moa
+```
+
+You can also install straight from GitHub:
+
+```bash
+pi install git:github.com/peeraponw/pi-moa
 ```
 
 ## Configure

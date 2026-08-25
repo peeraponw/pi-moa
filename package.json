@@ -1,5 +1,5 @@
 {
-  "name": "pi-moa",
+  "name": "@peeraponw/pi-moa",
   "version": "0.1.0",
   "type": "module",
   "description": "Mixture-of-agents provider and /moa workflow for pi.",
