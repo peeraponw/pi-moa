@@ -1,0 +1,28 @@
+{
+  "name": "pi-moa",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Mixture-of-agents provider and /moa workflow for pi.",
+  "keywords": ["pi-package", "pi", "mixture-of-agents"],
+  "license": "MIT",
+  "author": "Peerapon Wechsuwanmanee",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/peeraponw/pi-moa.git"
+  },
+  "files": [
+    "extensions",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test extensions/moa/tests/*.test.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions/moa/index.js"]
+  }
+}
