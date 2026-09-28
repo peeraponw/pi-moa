@@ -1,75 +1,26 @@
-const PROVIDER_ID = "moa";
-const MOA_API_ID = "pi-moa";
 const CONFIG_FILE = "moa.json";
-const TRANSCRIPT_PREFIX = "[pi-moa-advisors]";
-const ADVISOR_CONTEXT_TAG = "pi_moa_advisor_context";
-const DEFAULT_CONTEXT_WINDOW = 200000;
-const DEFAULT_MAX_TOKENS = 16384;
-const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
-
-const DEFAULT_AGGREGATOR = {
-  provider: "zai",
-  model: "glm-5.2",
-  thinking: "high",
-};
-
-const DEFAULT_ADVISORS = [
-  {
-    name: "glm-5.2",
-    provider: "zai",
-    model: "glm-5.2",
-    thinking: "xhigh",
-  },
-  {
-    name: "gpt-5.5",
-    provider: "openai-codex",
-    model: "gpt-5.5",
-    thinking: "xhigh",
-  },
-];
-
-const PRESET_ROLES = {
-  default: "Give broad coding advice, note risks, and suggest the next best action.",
-  architect: "Focus on architecture, decomposition, integration points, and tradeoffs.",
-  bug: "Find likely bugs, edge cases, incorrect assumptions, and missing tests.",
-  review: "Review for correctness, maintainability, security, and standards compliance.",
-  plan: "Produce an execution plan with sequencing, verification, and rollback concerns.",
-  debug: "Reason about root cause, observability, hypotheses, and minimal repro steps.",
-};
-
-function advisorWithRole(advisor, role) {
-  return {
-    ...advisor,
-    role,
-  };
-}
-
-function makePreset(name, description) {
-  const role = PRESET_ROLES[name] ?? PRESET_ROLES.default;
-  return {
-    description,
-    enabled: true,
-    visibleAdvisorOutputs: true,
-    advisors: DEFAULT_ADVISORS.map((advisor) => advisorWithRole(advisor, role)),
-    aggregator: { ...DEFAULT_AGGREGATOR },
-  };
-}
+const ADVISOR_CONTEXT_TAG = "pi_moa_opinions";
+const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 const DEFAULT_CONFIG = {
-  defaultPreset: "architect",
-  visibleAdvisorOutputs: true,
-  presets: {
-    default: makePreset("default", "General coding MoA"),
-    architect: makePreset("architect", "Architecture and design MoA"),
-    bug: makePreset("bug", "Bug-finding MoA"),
-    review: makePreset("review", "Code review MoA"),
-    plan: makePreset("plan", "Planning MoA"),
-    debug: makePreset("debug", "Debugging MoA"),
-  },
+  models: [
+    {
+      name: "glm-5.2",
+      provider: "zai",
+      model: "glm-5.2",
+      thinking: "xhigh",
+    },
+    {
+      name: "gpt-5.5",
+      provider: "openai-codex",
+      model: "gpt-5.5",
+      thinking: "xhigh",
+    },
+  ],
 };
 
 function clonePlain(value) {
-  return JSON.parse(JSON.stringify(value));
+  return structuredClone(value);
 }
 
 function isObject(value) {
@@ -112,48 +63,32 @@ function readModelRef(value, path, errors) {
   const model = assertString(value.model, `${path}.model`, errors);
   if (!provider || !model) return undefined;
 
-  return {
-    name: typeof value.name === "string" ? value.name : undefined,
+  const ref = {
     provider,
     model,
     thinking: readThinking(value.thinking, `${path}.thinking`, errors),
-    role: typeof value.role === "string" ? value.role : undefined,
     maxTokens: readOptionalNumber(value.maxTokens, `${path}.maxTokens`, errors),
     temperature: readOptionalNumber(value.temperature, `${path}.temperature`, errors),
   };
+  return Object.fromEntries(Object.entries(ref).filter(([, item]) => item !== undefined));
 }
 
-function readPreset(value, path, errors) {
+function readNamedModelRef(value, path, errors) {
   if (!isObject(value)) {
     errors.push(`${path} must be an object`);
     return undefined;
   }
-
-  const advisors = Array.isArray(value.advisors)
-    ? value.advisors.map((advisor, index) => {
-        return readModelRef(advisor, `${path}.advisors[${index}]`, errors);
-      })
-    : undefined;
-
-  const preset = {
-    description: typeof value.description === "string" ? value.description : undefined,
-    enabled: typeof value.enabled === "boolean" ? value.enabled : undefined,
-    visibleAdvisorOutputs:
-      typeof value.visibleAdvisorOutputs === "boolean" ? value.visibleAdvisorOutputs : undefined,
-    advisors: advisors?.filter(Boolean),
-    aggregator: value.aggregator
-      ? readModelRef(value.aggregator, `${path}.aggregator`, errors)
-      : undefined,
-    referenceMaxTokens: readOptionalNumber(
-      value.referenceMaxTokens,
-      `${path}.referenceMaxTokens`,
-      errors,
-    ),
-    maxTokens: readOptionalNumber(value.maxTokens, `${path}.maxTokens`, errors),
-  };
-
-  return Object.fromEntries(Object.entries(preset).filter(([, item]) => item !== undefined));
+  const ref = readModelRef(value, path, errors);
+  if (!ref) return undefined;
+  const name = typeof value.name === "string" && value.name.trim() !== "" ? value.name : undefined;
+  return name ? { name, ...ref } : ref;
 }
+
+const LEGACY_KEYS = ["presets", "defaultPreset", "visibleAdvisorOutputs"];
+const NEW_SCHEMA_HINT =
+  "MoA config now uses { \"models\": [...], \"aggregator\": {...} }. " +
+  "Presets were removed. Replace presets.<name>.advisors with the top-level models array " +
+  "and presets.<name>.aggregator with the top-level aggregator.";
 
 function parseConfigObject(value, sourceLabel) {
   const errors = [];
@@ -161,26 +96,31 @@ function parseConfigObject(value, sourceLabel) {
     throw new Error(`${sourceLabel}: config must be a JSON object`);
   }
 
-  const parsed = {};
-  if (value.defaultPreset !== undefined) {
-    parsed.defaultPreset = assertString(value.defaultPreset, "defaultPreset", errors);
-  }
-  if (value.visibleAdvisorOutputs !== undefined) {
-    if (typeof value.visibleAdvisorOutputs !== "boolean") {
-      errors.push("visibleAdvisorOutputs must be a boolean");
-    } else {
-      parsed.visibleAdvisorOutputs = value.visibleAdvisorOutputs;
-    }
+  const legacy = LEGACY_KEYS.filter((key) => value[key] !== undefined);
+  if (legacy.length > 0) {
+    throw new Error(`${sourceLabel}: found legacy key(s) ${legacy.join(", ")}. ${NEW_SCHEMA_HINT}`);
   }
 
-  if (value.presets !== undefined) {
-    if (!isObject(value.presets)) {
-      errors.push("presets must be an object");
+  const parsed = {};
+  if (value.models === undefined) {
+    errors.push("models is required and must be a non-empty array");
+  } else if (!Array.isArray(value.models)) {
+    errors.push("models must be an array");
+  } else {
+    parsed.models = value.models.map((model, index) =>
+      readNamedModelRef(model, `models[${index}]`, errors),
+    );
+  }
+
+  if (value.aggregator !== undefined) {
+    if (value.aggregator === null) {
+      parsed.aggregator = null;
     } else {
-      parsed.presets = {};
-      for (const [name, preset] of Object.entries(value.presets)) {
-        parsed.presets[name] = readPreset(preset, `presets.${name}`, errors);
+      if (isObject(value.aggregator) && value.aggregator.name !== undefined) {
+        errors.push("aggregator must not have a name field. Only models take a name label.");
       }
+      const aggregator = readModelRef(value.aggregator, "aggregator", errors);
+      if (aggregator) parsed.aggregator = aggregator;
     }
   }
 
@@ -190,38 +130,19 @@ function parseConfigObject(value, sourceLabel) {
   return parsed;
 }
 
-function mergePreset(basePreset, overridePreset) {
-  const merged = { ...(basePreset ?? {}), ...overridePreset };
-  if (basePreset?.aggregator && overridePreset?.aggregator) {
-    merged.aggregator = { ...basePreset.aggregator, ...overridePreset.aggregator };
-  }
-  return merged;
-}
-
 function mergeConfigs(baseConfig, overrideConfig) {
   const merged = clonePlain(baseConfig);
-  if (overrideConfig.defaultPreset) merged.defaultPreset = overrideConfig.defaultPreset;
-  if (overrideConfig.visibleAdvisorOutputs !== undefined) {
-    merged.visibleAdvisorOutputs = overrideConfig.visibleAdvisorOutputs;
-  }
-  if (overrideConfig.presets) {
-    for (const [name, preset] of Object.entries(overrideConfig.presets)) {
-      merged.presets[name] = mergePreset(merged.presets[name], preset);
-    }
+  if (overrideConfig.models) merged.models = clonePlain(overrideConfig.models);
+  if (Object.hasOwn(overrideConfig, "aggregator")) {
+    if (overrideConfig.aggregator) merged.aggregator = clonePlain(overrideConfig.aggregator);
+    else delete merged.aggregator;
   }
   return merged;
 }
 
 function validateMergedConfig(config) {
-  const presetNames = Object.keys(config.presets ?? {});
-  if (presetNames.length === 0) throw new Error("MoA config must define at least one preset");
-  if (!config.presets[config.defaultPreset]) {
-    throw new Error(`MoA defaultPreset '${config.defaultPreset}' does not exist in presets`);
-  }
-
-  for (const [name, preset] of Object.entries(config.presets)) {
-    if (!preset.aggregator) throw new Error(`MoA preset '${name}' must define aggregator`);
-    if (!Array.isArray(preset.advisors)) preset.advisors = [];
+  if (!Array.isArray(config.models) || config.models.length === 0) {
+    throw new Error("MoA config must define at least one model in models");
   }
   return config;
 }
@@ -230,11 +151,6 @@ export {
   ADVISOR_CONTEXT_TAG,
   CONFIG_FILE,
   DEFAULT_CONFIG,
-  DEFAULT_CONTEXT_WINDOW,
-  DEFAULT_MAX_TOKENS,
-  MOA_API_ID,
-  PROVIDER_ID,
-  TRANSCRIPT_PREFIX,
   clonePlain,
   mergeConfigs,
   parseConfigObject,

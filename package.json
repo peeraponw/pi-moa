@@ -2,8 +2,14 @@
   "name": "@peeraponw/pi-moa",
   "version": "0.1.0",
   "type": "module",
-  "description": "Mixture-of-agents provider and /moa workflow for pi.",
-  "keywords": ["pi-package", "pi", "mixture-of-agents"],
+  "description": "Second-opinion command for pi: ask every configured model in parallel, optionally aggregated.",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "second-opinion",
+    "mixture-of-agents",
+    "moa"
+  ],
   "license": "MIT",
   "author": "Peerapon Wechsuwanmanee",
   "repository": {
@@ -23,7 +29,9 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "pi": {
-    "extensions": ["./extensions/moa/index.js"]
+    "extensions": [
+      "./extensions/moa/index.js"
+    ]
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.87.1"
