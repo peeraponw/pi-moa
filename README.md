@@ -1,17 +1,21 @@
 # pi-moa
 
-Mixture-of-agents workflow for pi, adapted from Hermes MoA for coding-agent use.
+Second-opinion command for pi. `/moa <prompt>` asks every configured model the
+same question in parallel and shows each answer labeled with its model. An
+optional aggregator can merge the answers into one final take.
 
-## What it adds
+## What it does
 
-- A normal `moa` model provider with one model per preset.
-- A `/moa [preset] <prompt>` one-shot command that restores your previous model.
-- Advisor/reference models run on manual MoA invocations, not every tool-result turn.
-- Normal-model turns get guidance to ask before using MoA for unusually complex work.
-- Advisors see only user/assistant text, without tool schemas or tool results.
-- The aggregator keeps normal pi tools and acts as the real coding agent.
-- Advisor outputs are visible as a collapsible thinking block and filtered from future context.
-- Global config plus optional project override.
+- `/moa <prompt>` fans out to all configured models in parallel.
+- Each model sees the session's user and assistant text, without tool schemas
+  or tool results, plus your prompt as the final message.
+- Every answer renders as its own labeled section. A failed model renders as
+  an error section, so the others still show.
+- When an aggregator is configured, it receives the same conversation with the
+  opinions appended in a tagged block, and its merged answer renders last.
+- Output is display only. Nothing is injected into the session transcript, and
+  no provider or model is registered or switched.
+- Config is read on each invocation, so edits take effect without a reload.
 
 ## Install
 
@@ -39,45 +43,53 @@ Run:
 /moa setup
 ```
 
-The default generated config uses:
+Pick global or project, then edit the JSON in the editor. The default config
+uses `zai/glm-5.2:xhigh` and `openai-codex/gpt-5.5:xhigh` with no aggregator:
 
-- advisors: `zai/glm-5.2:xhigh`, `openai-codex/gpt-5.5:xhigh`
-- aggregator: `zai/glm-5.2:high`
-- presets: `default`, `architect`, `bug`, `review`, `plan`, `debug`
+```json
+{
+  "models": [
+    { "name": "glm-5.2", "provider": "zai", "model": "glm-5.2", "thinking": "xhigh" },
+    { "name": "gpt-5.5", "provider": "openai-codex", "model": "gpt-5.5", "thinking": "xhigh" }
+  ]
+}
+```
+
+Schema:
+
+- `models` (required, at least one entry). Each entry:
+  - `name` (optional): label shown in the output.
+  - `provider`, `model` (required): model reference, as in `/model`.
+  - `thinking` (optional): `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`.
+  - `maxTokens`, `temperature` (optional).
+- `aggregator` (optional): same shape as a model entry, minus `name`. Its
+  answer renders as the final section. Set it to `null` in a project config to
+  remove a global aggregator.
 
 Config files:
 
 - global: `~/.pi/agent/moa.json`
-- project override: `.pi/moa.json`
+- project override: `.pi/moa.json`, read only when the project is trusted
 
-Reload after editing:
+A project `models` array replaces the global one wholesale. Project-level
+`aggregator` replaces or removes the global aggregator.
 
-```text
-/moa reload
-```
+Configs from older versions with `presets` fail validation with an error that
+names the new schema.
 
 ## Use
 
-One-shot:
-
 ```text
-/moa architect design the migration
-/moa bug find the race condition
-/moa review review my current diff
-```
-
-Persistent model selection:
-
-```text
-/model architect --provider moa
-```
-
-With a persistent MoA model, advisors run on user-facing turns and are skipped on
-follow-up tool-result turns. Their latest advice is reused privately during the
-same tool loop, so tools stay cheaper without losing the manual MoA guidance.
-
-List presets:
-
-```text
+/moa is this migration plan sound?
 /moa list
+/moa setup
+/moa help
 ```
+
+`/moa <prompt>` needs your configured providers to have working auth, the same
+as running them as your session model.
+
+## Reserved words
+
+Prompts whose first word is `setup`, `list`, or `help` are treated as those
+commands, so such a prompt needs rephrasing.
